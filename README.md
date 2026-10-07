@@ -1,4 +1,6 @@
-# DyrWatt – reservoir & precipitation data platform
+# DyrWatt data platform
+
+##reservoir & precipitation
 
 Solution to the Fraktal *Data Engineer* case. DyrWatt AS wants to see reservoir
 filling and precipitation side by side to plan hydropower production. Both come
