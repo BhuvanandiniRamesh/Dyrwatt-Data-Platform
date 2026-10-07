@@ -1,0 +1,526 @@
+<title>DyrWatt Magasinmonitor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: control-room console. Sticky selector bar, KPI strip, one dominant season chart
+   with an aligned rain strip beneath, then comparison panels and ranked tables. */
+:root {
+  --bg: #eef2f3;
+  --surface: #ffffff;
+  --ink: #0f1a1f;
+  --ink-2: #4a5961;
+  --ink-3: #7b8a92;
+  --rule: #dbe2e5;
+  --grid: #e8edef;
+  --water: #2a78d6;          /* selected year, reservoir */
+  --water-soft: rgba(42,120,214,.13);
+  --prev: #8796a0;           /* previous year */
+  --rain: #1a9c6e;           /* precipitation */
+  --low: #d03b3b;            /* below median */
+  --high: #2a78d6;           /* above median */
+  --good: #0c8a0c; --warn: #b57800; --crit: #c23232;
+  --chip-bg: #e3eaed;
+  --demo-bg: #fff4d6; --demo-ink: #6b4a00;
+  --display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --body: "Barlow", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1316; --surface: #151d21; --ink: #eef3f5; --ink-2: #b2c0c7; --ink-3: #82939b;
+    --rule: #26333a; --grid: #1e292e; --water: #4b95ea; --water-soft: rgba(75,149,234,.17);
+    --prev: #7f9099; --rain: #2bb583; --low: #e66767; --high: #4b95ea;
+    --good: #3cc23c; --warn: #f0b429; --crit: #ee6a6a; --chip-bg: #1f2a30;
+    --demo-bg: #3a2f12; --demo-ink: #f3d98b; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1316; --surface: #151d21; --ink: #eef3f5; --ink-2: #b2c0c7; --ink-3: #82939b;
+  --rule: #26333a; --grid: #1e292e; --water: #4b95ea; --water-soft: rgba(75,149,234,.17);
+  --prev: #7f9099; --rain: #2bb583; --low: #e66767; --high: #4b95ea;
+  --good: #3cc23c; --warn: #f0b429; --crit: #ee6a6a; --chip-bg: #1f2a30;
+  --demo-bg: #3a2f12; --demo-ink: #f3d98b; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 400 15px/1.45 var(--body); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 48px; display: grid; gap: 18px; }
+@media (max-width: 520px) { .wrap { padding-inline: 16px; } }
+
+header.top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px 24px; }
+.brand { display: grid; gap: 2px; }
+.eyebrow { font: 600 12px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+h1 { margin: 0; font: 700 clamp(28px, 4vw, 40px)/1 var(--display); letter-spacing: .01em; text-wrap: balance; }
+.stamp { font: 400 12.5px/1.5 var(--mono); color: var(--ink-2); text-align: right; }
+.demo { display: flex; gap: 10px; align-items: start; background: var(--demo-bg); color: var(--demo-ink); padding: 10px 14px; border-radius: 6px; font-size: 14px; }
+.demo b { font-weight: 600; }
+.demo[hidden] { display: none; }
+
+.controls { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 8px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; border-bottom: 1px solid var(--rule); }
+.seg { display: flex; flex-wrap: wrap; gap: 4px; }
+.seg button, .tabs button { font: 600 15px/1 var(--display); letter-spacing: .04em; color: var(--ink-2); background: transparent; border: 1px solid var(--rule); border-radius: 4px; padding: 8px 11px; cursor: pointer; }
+.seg button:hover, .tabs button:hover { color: var(--ink); border-color: var(--ink-3); }
+.seg button[aria-pressed="true"], .tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--water); outline-offset: 2px; }
+.ctl-label { font: 600 12px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+.ctl { display: flex; align-items: center; gap: 8px; }
+select { font: 500 15px/1 var(--mono); padding: 7px 8px; border-radius: 4px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); }
+.area-desc { font-size: 13.5px; color: var(--ink-2); flex: 1 1 260px; min-width: 0; }
+
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 900px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpi { background: var(--surface); border-radius: 6px; padding: 14px 16px 12px; display: grid; gap: 4px; align-content: start; min-width: 0; }
+.kpi .lbl { font: 600 12.5px/1.2 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); }
+.kpi .val { font: 600 clamp(30px, 3.6vw, 42px)/1 var(--display); font-variant-numeric: tabular-nums; }
+.kpi .val small { font-size: .5em; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+.kpi .sub { font-size: 13px; color: var(--ink-2); }
+.chip { display: inline-flex; align-items: center; gap: 5px; font: 600 12.5px/1 var(--display); letter-spacing: .05em; padding: 4px 7px; border-radius: 3px; background: var(--chip-bg); width: fit-content; }
+.chip .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.chip.good { color: var(--good); } .chip.warn { color: var(--warn); } .chip.crit { color: var(--crit); }
+
+.panel { background: var(--surface); border-radius: 6px; padding: 16px 16px 12px; min-width: 0; display: grid; gap: 8px; align-content: start; }
+.panel h2 { margin: 0; font: 600 21px/1.15 var(--display); letter-spacing: .01em; text-wrap: balance; }
+.panel .note { margin: 0; font-size: 13.5px; color: var(--ink-2); max-width: 75ch; }
+.ph { display: flex; flex-wrap: wrap; gap: 6px 16px; justify-content: space-between; align-items: end; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 900px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; color: var(--ink-2); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 18px; height: 0; border-top: 2.5px solid; }
+.sw.dash { border-top-style: dashed; } .sw.dot { border-top-style: dotted; }
+.sw.box { height: 10px; border: 0; border-radius: 2px; }
+
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.chart text { font: 400 11.5px var(--mono); fill: var(--ink-3); }
+.chart .lab { font: 600 13px var(--display); letter-spacing: .03em; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.axis { stroke: var(--rule); stroke-width: 1; }
+.hit { fill: transparent; cursor: crosshair; }
+.xhair { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 3 3; }
+
+.tip { position: fixed; z-index: 20; pointer-events: none; background: var(--ink); color: var(--bg); border-radius: 5px; padding: 8px 10px; font: 400 12.5px/1.45 var(--body); min-width: 150px; box-shadow: 0 6px 20px rgba(0,0,0,.18); }
+.tip b { font: 600 13.5px/1.3 var(--display); letter-spacing: .03em; display: block; margin-bottom: 3px; }
+.tip .r { display: flex; justify-content: space-between; gap: 14px; font-variant-numeric: tabular-nums; }
+.tip .r i { font-style: normal; display: inline-flex; align-items: center; gap: 6px; opacity: .8; }
+.tip .k { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+
+.tablewrap { overflow: auto; max-height: 520px; }
+.tablewrap thead th { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; font-variant-numeric: tabular-nums; }
+th { font: 600 12px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+td.num { font-family: var(--mono); font-size: 12.5px; }
+tr.sel td { background: var(--water-soft); }
+tr.sel td:first-child { font-weight: 600; }
+.pos { color: var(--good); } .neg { color: var(--crit); }
+.muted { color: var(--ink-3); }
+
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tabs button { font-size: 14px; padding: 6px 9px; }
+.rank { display: grid; gap: 0; }
+.rank .row { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.rank .n { font: 600 16px/1 var(--display); color: var(--ink-3); }
+.rank .what { min-width: 0; }
+.rank .what b { font: 600 15px/1.2 var(--display); letter-spacing: .02em; display: block; }
+.rank .what span { font-size: 12.5px; color: var(--ink-2); }
+.rank .v { font: 500 14px var(--mono); text-align: right; }
+.bar { height: 5px; border-radius: 3px; margin-top: 5px; }
+
+footer { font-size: 13px; color: var(--ink-2); display: grid; gap: 6px; max-width: 90ch; }
+footer code { font: 400 12px var(--mono); background: var(--chip-bg); padding: 1px 4px; border-radius: 3px; }
+@media (prefers-reduced-motion: no-preference) { .chart path.draw { transition: d .25s; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="eyebrow">DyrWatt AS · Produksjonsplanlegging</span>
+      <h1>Magasinfylling og nedbør</h1>
+    </div>
+    <div class="stamp" id="stamp"></div>
+  </header>
+  <div class="demo" id="demo" hidden></div>
+
+  <div class="controls" role="toolbar" aria-label="Filtre">
+    <div class="ctl"><span class="ctl-label">Område</span><div class="seg" id="areas"></div></div>
+    <div class="ctl"><label class="ctl-label" for="year">År</label><select id="year"></select></div>
+    <div class="area-desc" id="areaDesc"></div>
+  </div>
+
+  <section class="kpis" id="kpis" aria-label="Nøkkeltall"></section>
+
+  <section class="panel">
+    <div class="ph">
+      <div><h2 id="seasonTitle">Fyllingsgrad gjennom året</h2>
+        <p class="note">Ukentlig fyllingsgrad mot samme uke i fjor og NVEs historiske spenn. Nedbøren under deler samme ukeakse, slik at regnperioder kan leses mot endringen i magasinet.</p></div>
+      <div class="legend" id="seasonLegend"></div>
+    </div>
+    <div class="chart" id="seasonChart"></div>
+    <div class="ph"><span class="ctl-label" id="rainLabel">Nedbør per uke (mm)</span><div class="legend" id="rainLegend"></div></div>
+    <div class="chart" id="rainChart"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <div class="ph"><div><h2>Nedbør per måned</h2><p class="note">Valgt år mot året før. Streken viser snittet for måneden i hele dataperioden.</p></div>
+        <div class="legend" id="monthLegend"></div></div>
+      <div class="chart" id="monthChart"></div>
+    </section>
+    <section class="panel">
+      <div class="ph"><div><h2 id="areasTitle">Alle områder mot median</h2><p class="note" id="areasNote"></p></div></div>
+      <div class="chart" id="areaChart"></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="ph"><div><h2>Langsiktig trend</h2><p class="note">Hele tidsserien. Valgt år er markert. Hold over linjen for verdier.</p></div>
+      <div class="legend"><span><i class="sw" style="border-color:var(--water)"></i>Fyllingsgrad</span><span><i class="sw dot" style="border-color:var(--ink-3)"></i>Historisk median</span></div></div>
+    <div class="chart" id="longChart"></div>
+  </section>
+
+  <div class="grid2">
+    <section class="panel">
+      <div class="ph"><div><h2>Årsoversikt</h2><p class="note">Maks og min per år med uke, snitt og endring fra året før. Nedbør hittil i år sammenlignes på samme dato.</p></div></div>
+      <div class="tablewrap"><table id="yearTable"></table></div>
+    </section>
+    <section class="panel">
+      <div class="ph"><h2>Største endringer</h2>
+        <div class="tabs" id="scopeTabs"></div></div>
+      <div class="tabs" id="metricTabs"></div>
+      <div class="rank" id="rankList"></div>
+    </section>
+  </div>
+
+  <footer>
+    <div><b>Kilder:</b> NVE Magasinstatistikk (ukentlig fyllingsgrad per elspotområde, historisk min/median/maks) og NVE seNorge via GridTimeSeries-API-et (døgnnedbør, 1×1 km rutenett). Nedbøren hentes i ett punkt ved et sentralt magasin i hvert område: Aurdal/Valdres (NO1), Blåsjø (NO2), Aursjøen (NO3), Storglomvatnet (NO4) og Sysenvatnet (NO5). Norge = snitt av de fem punktene.</div>
+    <div><b>Datamodell:</b> <code>dw.fact_reservoir_weekly</code>, <code>dw.fact_precipitation_daily</code> og <code>dw.fact_precipitation_weekly</code> mot <code>dim_date</code>, <code>dim_area</code> og <code>dim_station</code>. Dashboardet leser rapportvisningene <code>rpt.*</code>.</div>
+  </footer>
+</div>
+<div class="tip" id="tip" hidden></div>
+
+<script>
+const DATA = /*__DASHBOARD_DATA__*/null;
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const nf = (v, d = 1) => v == null ? "–" : Number(v).toLocaleString("nb-NO", { minimumFractionDigits: d, maximumFractionDigits: d });
+const sgn = (v, d = 1) => v == null ? "–" : (v > 0 ? "+" : v < 0 ? "−" : "±") + nf(Math.abs(v), d);
+const MONTHS = ["jan","feb","mar","apr","mai","jun","jul","aug","sep","okt","nov","des"];
+const fdate = s => { if (!s) return "–"; const d = new Date(s + "T12:00:00"); return `${d.getDate()}. ${MONTHS[d.getMonth()]} ${d.getFullYear()}`; };
+const cssv = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const idx = cols => Object.fromEntries(cols.map((c, i) => [c, i]));
+const W = idx(DATA.cols.weekly), M = idx(DATA.cols.monthly), Y = idx(DATA.cols.yearly), C = idx(DATA.cols.changes);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function scale(d0, d1, r0, r1) { const k = (r1 - r0) / ((d1 - d0) || 1); return v => r0 + (v - d0) * k; }
+function niceMax(v, step) { return Math.max(step, Math.ceil(v / step) * step); }
+function linePath(pts) { let s = "", pen = false; for (const p of pts) { if (p == null) { pen = false; continue; } s += (pen ? "L" : "M") + p[0].toFixed(1) + "," + p[1].toFixed(1); pen = true; } return s; }
+
+const tip = $("tip");
+function showTip(html, ev) {
+  tip.innerHTML = html; tip.hidden = false;
+  const r = tip.getBoundingClientRect(), pad = 14;
+  let x = ev.clientX + pad, y = ev.clientY + pad;
+  if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - pad;
+  if (y + r.height > innerHeight - 8) y = ev.clientY - r.height - pad;
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = Math.max(8, y) + "px";
+}
+const hideTip = () => { tip.hidden = true; };
+const trow = (label, val, color) => `<div class="r"><i>${color ? `<span class="k" style="background:${color}"></span>` : ""}${label}</i><span>${val}</span></div>`;
+
+/* ---------- state ---------- */
+const areaCodes = DATA.areas.map(a => a.code);
+const lastRow = DATA.weekly.NOR ? DATA.weekly.NOR.at(-1) : DATA.weekly[areaCodes[0]].at(-1);
+const LATEST_YEAR = lastRow[W.iso_year], LATEST_WEEK = lastRow[W.iso_week];
+let state = { area: "NO5", year: LATEST_YEAR, metric: "fill_1w", scope: "year" };
+try { const s = JSON.parse(localStorage.getItem("dyrwatt-state") || "{}"); if (areaCodes.includes(s.area)) state.area = s.area; } catch (e) {}
+if (!areaCodes.includes(state.area)) state.area = areaCodes[0];
+
+const weekRows = (a, y) => (DATA.weekly[a] || []).filter(r => r[W.iso_year] === y);
+const refWeek = y => y === LATEST_YEAR ? LATEST_WEEK : LATEST_WEEK; // same ISO week every year = like-for-like
+function rowAt(a, y, w) { const rows = weekRows(a, y); return rows.find(r => r[W.iso_week] === w) || rows.at(-1); }
+function benchmark(a) { const b = {}; for (const r of DATA.weekly[a] || []) b[r[W.iso_week]] = [r[W.hist_min_pct], r[W.hist_median_pct], r[W.hist_max_pct]]; return b; }
+
+/* ---------- header & controls ---------- */
+function renderHeader() {
+  const m = DATA.meta;
+  $("stamp").innerHTML = `Magasin: uke ${LATEST_WEEK} ${LATEST_YEAR} (t.o.m. ${fdate(m.last_week_end)})<br>Nedbør: t.o.m. ${fdate(m.last_precip_date)} · Oppdatert ${esc(m.generated_at.replace("T", " "))}`;
+  if (m.demo) {
+    $("demo").hidden = false;
+    $("demo").innerHTML = `<span>⚠</span><div><b>Magasinhistorikken er foreløpig simulert.</b> Nedbøren er ekte NVE-data (seNorge), og siste magasinuke og kapasitetene er NVEs publiserte tall for uke ${LATEST_WEEK}. Ukene før er plassholdere til den fulle historikken fra NVE er lastet inn med <code>python ingest.py --only nve</code>.</div>`;
+  }
+  $("areas").innerHTML = DATA.areas.map(a => `<button type="button" data-a="${a.code}" aria-pressed="${a.code === state.area}">${esc(a.code === "NOR" ? "Norge" : a.name.replace(" ", ""))}</button>`).join("");
+  $("areas").onclick = e => { const b = e.target.closest("button"); if (b) setState({ area: b.dataset.a }); };
+  const years = [...new Set(DATA.weekly[areaCodes[0]].map(r => r[W.iso_year]))].sort((a, b) => b - a);
+  $("year").innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+  $("year").onchange = e => setState({ year: +e.target.value });
+}
+
+function setState(p) {
+  Object.assign(state, p);
+  try { localStorage.setItem("dyrwatt-state", JSON.stringify({ area: state.area })); } catch (e) {}
+  render();
+}
+
+/* ---------- KPIs ---------- */
+function renderKPIs() {
+  const a = state.area, y = state.year, w = refWeek(y);
+  const cur = rowAt(a, y, w), prev = rowAt(a, y - 1, cur ? cur[W.iso_week] : w);
+  const wk = cur ? cur[W.iso_week] : w;
+  const fill = cur?.[W.fill_pct], med = cur?.[W.hist_median_pct];
+  const yoy = prev && fill != null ? fill - prev[W.fill_pct] : null;
+  const dev = med != null && fill != null ? fill - med : null;
+  const st = dev == null ? null : dev >= -5 ? ["good", "Normal"] : dev >= -15 ? ["warn", "Under normalt"] : ["crit", "Langt under normalt"];
+  const yr = (DATA.yearly[a] || []).find(r => r[Y.year] === y);
+  const ytd = yr?.[Y.precip_ytd_mm], ytdY = yr?.[Y.precip_ytd_yoy_pct];
+  const area = DATA.areas.find(x => x.code === a);
+
+  $("kpis").innerHTML = `
+    <div class="kpi"><span class="lbl">Fyllingsgrad uke ${wk}</span>
+      <span class="val">${nf(fill)}<small>%</small></span>
+      <span class="sub">${nf(cur?.[W.fill_twh])} av ${nf(cur?.[W.capacity_twh])} TWh · ${sgn(cur?.[W.week_change_pp])} pp siste uke</span></div>
+    <div class="kpi"><span class="lbl">Mot samme uke i fjor</span>
+      <span class="val">${sgn(yoy)}<small>pp</small></span>
+      <span class="sub">${y - 1}: ${nf(prev?.[W.fill_pct])} %</span></div>
+    <div class="kpi"><span class="lbl">Mot historisk median</span>
+      <span class="val">${sgn(dev)}<small>pp</small></span>
+      ${st ? `<span class="chip ${st[0]}"><span class="dot"></span>${st[1]}</span>` : ""}
+      <span class="sub">Median uke ${wk}: ${nf(med)} % · spenn ${nf(cur?.[W.hist_min_pct], 0)}–${nf(cur?.[W.hist_max_pct], 0)} %</span></div>
+    <div class="kpi"><span class="lbl">Nedbør hittil i år</span>
+      <span class="val">${nf(ytd, 0)}<small>mm</small></span>
+      <span class="sub">${ytdY == null ? "Ingen sammenligning" : `${sgn(ytdY)} % mot samme periode ${y - 1}`}${area?.station ? ` · ${esc(area.station)}` : " · snitt av de fem punktene"}</span></div>`;
+  $("areaDesc").textContent = `${area.long_name}. ${area.description || ""}`;
+}
+
+/* ---------- season chart (fill by ISO week) + aligned rain strip ---------- */
+let hoverHandlers = [];
+function renderSeason() {
+  const a = state.area, y = state.year;
+  const el = $("seasonChart"), w = el.clientWidth || 800, h = Math.max(240, Math.min(330, w * 0.36));
+  const m = { l: 38, r: 54, t: 10, b: 24 };
+  const x = scale(1, 53, m.l, w - m.r), yS = scale(0, 100, h - m.b, m.t);
+  const bm = benchmark(a), cur = weekRows(a, y), prev = weekRows(a, y - 1);
+  const weeks = Object.keys(bm).map(Number).sort((p, q) => p - q);
+  const water = cssv("--water"), prevC = cssv("--prev"), rain = cssv("--rain");
+
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Fyllingsgrad per uke ${y} mot ${y - 1} og historisk spenn">`;
+  for (let v = 0; v <= 100; v += 20) s += `<line class="gridline" x1="${m.l}" x2="${w - m.r}" y1="${yS(v)}" y2="${yS(v)}"/><text x="${m.l - 6}" y="${yS(v) + 4}" text-anchor="end">${v}</text>`;
+  for (const wk of [1, 10, 20, 30, 40, 52]) s += `<text x="${x(wk)}" y="${h - 6}" text-anchor="middle">${wk === 1 ? "uke 1" : wk}</text>`;
+  const top = weeks.map(k => [x(k), yS(bm[k][2])]), bot = weeks.map(k => [x(k), yS(bm[k][0])]).reverse();
+  s += `<path d="${linePath(top)}L${bot.map(p => p.join(",")).join("L")}Z" fill="var(--water-soft)" stroke="none"/>`;
+  s += `<path d="${linePath(weeks.map(k => [x(k), yS(bm[k][1])]))}" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="1.5 3.5" stroke-linecap="round"/>`;
+  s += `<path d="${linePath(prev.map(r => [x(r[W.iso_week]), yS(r[W.fill_pct])]))}" fill="none" stroke="${prevC}" stroke-width="2" stroke-dasharray="6 4"/>`;
+  s += `<path d="${linePath(cur.map(r => [x(r[W.iso_week]), yS(r[W.fill_pct])]))}" fill="none" stroke="${water}" stroke-width="2.5" stroke-linejoin="round"/>`;
+  if (cur.length) {
+    const L = cur.at(-1), cx = x(L[W.iso_week]), cy = yS(L[W.fill_pct]);
+    s += `<circle cx="${cx}" cy="${cy}" r="5" fill="${water}" stroke="var(--surface)" stroke-width="2"/>`;
+    s += `<text class="lab" x="${cx + 9}" y="${cy + 4}" style="fill:var(--ink)">${nf(L[W.fill_pct], 0)} %</text>`;
+  }
+  if (prev.length && prev.at(-1)[W.iso_week] >= 50) { const L = prev.at(-1); s += `<text class="lab" x="${x(L[W.iso_week]) + 6}" y="${yS(L[W.fill_pct]) + 4}" style="fill:var(--ink-2)">${y - 1}</text>`; }
+  s += `<g id="seasonHair"></g><rect class="hit" x="${m.l}" y="${m.t}" width="${w - m.l - m.r}" height="${h - m.t - m.b}"/></svg>`;
+  el.innerHTML = s;
+
+  $("seasonTitle").textContent = `Fyllingsgrad gjennom året · ${y}`;
+  $("seasonLegend").innerHTML = `<span><i class="sw" style="border-color:${water}"></i>${y}</span><span><i class="sw dash" style="border-color:${prevC}"></i>${y - 1}</span><span><i class="sw dot" style="border-color:var(--ink-3)"></i>Median</span><span><i class="sw box" style="background:var(--water-soft)"></i>Historisk min–maks</span>`;
+
+  // Rain strip, same x scale
+  const rel = $("rainChart"), rh = 120, rm = { t: 8, b: 20 };
+  const curP = new Map(cur.map(r => [r[W.iso_week], r[W.precip_week_mm]])), prevP = new Map(prev.map(r => [r[W.iso_week], r[W.precip_week_mm]]));
+  const pmax = niceMax(Math.max(10, ...[...curP.values(), ...prevP.values()].filter(v => v != null)), 50);
+  const ry = scale(0, pmax, rh - rm.b, rm.t), bw = Math.max(2, (x(2) - x(1)) - 2);
+  let r = `<svg viewBox="0 0 ${w} ${rh}" role="img" aria-label="Nedbør per uke ${y}">`;
+  for (const v of [0, pmax / 2, pmax]) r += `<line class="gridline" x1="${m.l}" x2="${w - m.r}" y1="${ry(v)}" y2="${ry(v)}"/><text x="${m.l - 6}" y="${ry(v) + 4}" text-anchor="end">${v}</text>`;
+  for (const [wk, v] of curP) if (v != null && v > 0) { const bh = Math.max(1, ry(0) - ry(v)); r += `<path d="M${x(wk) - bw / 2},${ry(0)}v${-Math.max(0, bh - 2)}q0,-2 2,-2h${bw - 4}q2,0 2,2v${Math.max(0, bh - 2)}z" fill="${rain}"/>`; }
+  r += `<path d="${linePath(weeks.map(k => prevP.get(k) == null ? null : [x(k), ry(prevP.get(k))]))}" fill="none" stroke="${prevC}" stroke-width="1.5" stroke-dasharray="4 3"/>`;
+  r += `<line class="axis" x1="${m.l}" x2="${w - m.r}" y1="${ry(0)}" y2="${ry(0)}"/>`;
+  for (const wk of [1, 10, 20, 30, 40, 52]) r += `<text x="${x(wk)}" y="${rh - 4}" text-anchor="middle">${wk}</text>`;
+  r += `<g id="rainHair"></g><rect class="hit" x="${m.l}" y="${rm.t}" width="${w - m.l - m.r}" height="${rh - rm.t - rm.b}"/></svg>`;
+  rel.innerHTML = r;
+  $("rainLegend").innerHTML = `<span><i class="sw box" style="background:${rain}"></i>${y}</span><span><i class="sw dash" style="border-color:${prevC}"></i>${y - 1}</span>`;
+  $("rainLabel").textContent = (() => { const z = DATA.areas.find(q => q.code === a); return `Nedbør per uke (mm) · ${z.station ? `${z.station}, ${z.elevation_m} moh. (seNorge)` : "snitt av de fem punktene (seNorge)"}`; })();
+
+  const curBy = new Map(cur.map(r => [r[W.iso_week], r])), prevBy = new Map(prev.map(r => [r[W.iso_week], r]));
+  function hover(ev, svgEl) {
+    const pt = svgEl.getBoundingClientRect(), px = (ev.clientX - pt.left) * (w / pt.width);
+    const wk = Math.max(1, Math.min(53, Math.round(1 + (px - m.l) / ((w - m.l - m.r) / 52))));
+    if (!bm[wk]) return;
+    const c = curBy.get(wk), p = prevBy.get(wk);
+    $("seasonHair").innerHTML = `<line class="xhair" x1="${x(wk)}" x2="${x(wk)}" y1="${m.t}" y2="${h - m.b}"/>` +
+      (p ? `<circle cx="${x(wk)}" cy="${yS(p[W.fill_pct])}" r="4" fill="${prevC}" stroke="var(--surface)" stroke-width="2"/>` : "") +
+      (c ? `<circle cx="${x(wk)}" cy="${yS(c[W.fill_pct])}" r="4.5" fill="${water}" stroke="var(--surface)" stroke-width="2"/>` : "");
+    $("rainHair").innerHTML = `<line class="xhair" x1="${x(wk)}" x2="${x(wk)}" y1="${rm.t}" y2="${rh - rm.b}"/>`;
+    showTip(`<b>Uke ${wk}${c ? " · " + fdate(c[W.week_end_date]) : ""}</b>` +
+      trow(String(y), c ? nf(c[W.fill_pct]) + " %" : "–", water) +
+      trow(String(y - 1), p ? nf(p[W.fill_pct]) + " %" : "–", prevC) +
+      trow("Median", nf(bm[wk][1]) + " %") +
+      trow("Endring uke", c ? sgn(c[W.week_change_pp]) + " pp" : "–") +
+      trow(`Nedbør ${y}`, c && c[W.precip_week_mm] != null ? nf(c[W.precip_week_mm]) + " mm" : "–", rain) +
+      trow(`Nedbør ${y - 1}`, p && p[W.precip_week_mm] != null ? nf(p[W.precip_week_mm]) + " mm" : "–"), ev);
+  }
+  const clear = () => { hideTip(); $("seasonHair").innerHTML = ""; $("rainHair").innerHTML = ""; };
+  for (const id of ["seasonChart", "rainChart"]) {
+    const svgEl = $(id).querySelector("svg"), hit = svgEl.querySelector(".hit");
+    hit.addEventListener("pointermove", ev => hover(ev, svgEl));
+    hit.addEventListener("pointerleave", clear);
+  }
+}
+
+/* ---------- monthly precipitation ---------- */
+function renderMonthly() {
+  const a = state.area, y = state.year, rows = DATA.monthly[a] || [];
+  const cur = new Map(rows.filter(r => r[M.year] === y).map(r => [r[M.month], r]));
+  const prev = new Map(rows.filter(r => r[M.year] === y - 1).map(r => [r[M.month], r]));
+  const normal = new Map(rows.map(r => [r[M.month], r[M.normal_mm]]));
+  const el = $("monthChart"), w = el.clientWidth || 600, h = 260, m = { l: 40, r: 8, t: 12, b: 24 };
+  const vals = [...cur.values(), ...prev.values()].map(r => r[M.precip_mm]).concat([...normal.values()]).filter(v => v != null);
+  const ymax = niceMax(Math.max(10, ...vals), 50), yS = scale(0, ymax, h - m.b, m.t);
+  const slot = (w - m.l - m.r) / 12, bw = Math.min(16, (slot - 8) / 2);
+  const rain = cssv("--rain"), prevC = cssv("--prev");
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Nedbør per måned ${y} mot ${y - 1}"><defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="5" height="5" fill="${rain}" opacity=".35"/><line x1="0" y1="0" x2="0" y2="5" stroke="${rain}" stroke-width="2.5"/></pattern></defs>`;
+  const mstep = ymax <= 100 ? 25 : ymax <= 300 ? 50 : 100;
+  for (let v = 0; v <= ymax; v += mstep) s += `<line class="gridline" x1="${m.l}" x2="${w - m.r}" y1="${yS(v)}" y2="${yS(v)}"/><text x="${m.l - 6}" y="${yS(v) + 4}" text-anchor="end">${Math.round(v)}</text>`;
+  const bar = (cx, v, fill) => { if (v == null || v <= 0) return ""; const bh = yS(0) - yS(v), r = Math.min(3, bh); return `<path d="M${cx},${yS(0)}v${-(bh - r)}q0,-${r} ${r},-${r}h${bw - 2 * r}q${r},0 ${r},${r}v${bh - r}z" fill="${fill}"/>`; };
+  for (let mo = 1; mo <= 12; mo++) {
+    const cx = m.l + slot * (mo - 1) + slot / 2, p = prev.get(mo), c = cur.get(mo);
+    s += bar(cx - bw - 1, p?.[M.precip_mm], prevC);
+    s += bar(cx + 1, c?.[M.precip_mm], c?.[M.is_partial_month] ? "url(#hatch)" : rain);
+    if (normal.get(mo) != null) s += `<line x1="${cx - bw - 4}" x2="${cx + bw + 4}" y1="${yS(normal.get(mo))}" y2="${yS(normal.get(mo))}" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/>`;
+    s += `<text x="${cx}" y="${h - 6}" text-anchor="middle">${slot < 38 ? MONTHS[mo - 1][0].toUpperCase() : MONTHS[mo - 1]}</text>`;
+    s += `<rect class="hit" data-m="${mo}" x="${cx - slot / 2}" y="${m.t}" width="${slot}" height="${h - m.t - m.b}"/>`;
+  }
+  if (!cur.size && !prev.size) s += `<text x="${(m.l + w - m.r) / 2}" y="${h / 2}" text-anchor="middle" style="fill:var(--ink-2)">Nedbørdata finnes fra 2018</text>`;
+  s += `<line class="axis" x1="${m.l}" x2="${w - m.r}" y1="${yS(0)}" y2="${yS(0)}"/></svg>`;
+  el.innerHTML = s;
+  $("monthLegend").innerHTML = `<span><i class="sw box" style="background:${prevC}"></i>${y - 1}</span><span><i class="sw box" style="background:${rain}"></i>${y}</span><span><i class="sw" style="border-color:var(--ink)"></i>Snitt</span>`;
+  el.querySelectorAll(".hit").forEach(hn => {
+    hn.addEventListener("pointermove", ev => {
+      const mo = +hn.dataset.m, c = cur.get(mo), p = prev.get(mo), n = normal.get(mo);
+      const diff = c && p ? c[M.precip_mm] - p[M.precip_mm] : null;
+      showTip(`<b>${MONTHS[mo - 1][0].toUpperCase() + MONTHS[mo - 1].slice(1)}${c?.[M.is_partial_month] ? " (delvis måned)" : ""}</b>` +
+        trow(String(y), c ? nf(c[M.precip_mm]) + " mm" : "–", rain) + trow(String(y - 1), p ? nf(p[M.precip_mm]) + " mm" : "–", prevC) +
+        trow("Endring", diff == null ? "–" : sgn(diff) + " mm") + trow("Snitt", nf(n) + " mm") +
+        trow("Nedbørdager ≥1 mm", c ? nf(c[M.wet_days], 0) : "–") + trow("Våteste døgn", c ? nf(c[M.max_day_mm]) + " mm" : "–"), ev);
+    });
+    hn.addEventListener("pointerleave", hideTip);
+  });
+}
+
+/* ---------- all areas vs median (diverging) ---------- */
+function renderAreas() {
+  const y = state.year, wk = refWeek(y);
+  const items = DATA.areas.map(ar => { const r = rowAt(ar.code, y, wk); return { code: ar.code, name: ar.code === "NOR" ? "Norge" : ar.name, r, dev: r ? r[W.fill_pct] - r[W.hist_median_pct] : null }; });
+  const shownWk = items.find(i => i.r)?.r[W.iso_week] ?? wk;
+  $("areasTitle").textContent = `Alle områder mot median · uke ${shownWk} ${y}`;
+  $("areasNote").textContent = "Avvik fra historisk median i prosentpoeng. Klikk et område for å velge det.";
+  const el = $("areaChart"), w = el.clientWidth || 480, rowH = 34, m = { l: 66, r: 70, t: 6, b: 22 }, h = m.t + m.b + rowH * items.length;
+  const lim = niceMax(Math.max(10, ...items.map(i => Math.abs(i.dev ?? 0))), 10), xS = scale(-lim, lim, m.l, w - m.r);
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Avvik fra median per område">`;
+  for (const v of [-lim, -lim / 2, 0, lim / 2, lim]) s += `<line class="${v === 0 ? "axis" : "gridline"}" x1="${xS(v)}" x2="${xS(v)}" y1="${m.t}" y2="${h - m.b}"/><text x="${xS(v)}" y="${h - 6}" text-anchor="middle">${v > 0 ? "+" : ""}${v}</text>`;
+  items.forEach((it, i) => {
+    const cy = m.t + rowH * i + rowH / 2, sel = it.code === state.area;
+    s += `<text class="lab" x="${m.l - 10}" y="${cy + 4}" text-anchor="end" style="fill:var(${sel ? "--ink" : "--ink-2"})">${esc(it.name)}</text>`;
+    if (it.dev != null) {
+      const x0 = xS(0), x1 = xS(it.dev), col = it.dev < 0 ? "var(--low)" : "var(--high)";
+      s += `<rect x="${Math.min(x0, x1)}" y="${cy - 8}" width="${Math.max(1.5, Math.abs(x1 - x0))}" height="16" rx="3" fill="${col}" opacity="${sel ? 1 : .55}"/>`;
+      s += `<text x="${w - m.r + 8}" y="${cy + 4}" style="fill:var(--ink);font-weight:${sel ? 600 : 400}">${sgn(it.dev)} pp</text>`;
+    }
+    s += `<rect class="hit" data-a="${it.code}" x="0" y="${cy - rowH / 2}" width="${w}" height="${rowH}" style="cursor:pointer"/>`;
+  });
+  s += `</svg>`;
+  el.innerHTML = s;
+  el.querySelectorAll(".hit").forEach(hn => {
+    const it = items.find(i => i.code === hn.dataset.a);
+    hn.addEventListener("click", () => setState({ area: it.code }));
+    hn.addEventListener("pointermove", ev => it.r && showTip(`<b>${esc(it.name)} · uke ${it.r[W.iso_week]}</b>` + trow("Fyllingsgrad", nf(it.r[W.fill_pct]) + " %") + trow("Median", nf(it.r[W.hist_median_pct]) + " %") + trow("Avvik", sgn(it.dev) + " pp") + trow("Fylling", nf(it.r[W.fill_twh]) + " TWh"), ev));
+    hn.addEventListener("pointerleave", hideTip);
+  });
+}
+
+/* ---------- long-term trend ---------- */
+function renderLong() {
+  const a = state.area, rows = DATA.weekly[a] || [], y = state.year;
+  const el = $("longChart"), w = el.clientWidth || 1000, h = 220, m = { l: 38, r: 12, t: 10, b: 24 };
+  const t = r => Date.parse(r[W.week_end_date]);
+  const t0 = t(rows[0]), t1 = t(rows.at(-1)), x = scale(t0, t1, m.l, w - m.r), yS = scale(0, 100, h - m.b, m.t);
+  const water = cssv("--water");
+  const ys = rows.filter(r => r[W.iso_year] === y);
+  let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Fyllingsgrad over hele perioden">`;
+  if (ys.length) s += `<rect x="${x(t(ys[0]))}" y="${m.t}" width="${Math.max(2, x(t(ys.at(-1))) - x(t(ys[0])))}" height="${h - m.t - m.b}" fill="var(--water-soft)"/>`;
+  for (let v = 0; v <= 100; v += 25) s += `<line class="gridline" x1="${m.l}" x2="${w - m.r}" y1="${yS(v)}" y2="${yS(v)}"/><text x="${m.l - 6}" y="${yS(v) + 4}" text-anchor="end">${v}</text>`;
+  const years = [...new Set(rows.map(r => r[W.iso_year]))];
+  const step = Math.max(1, Math.ceil(years.length * 44 / (w - m.l - m.r)));
+  years.forEach((yr, i) => { const f = rows.find(r => r[W.iso_year] === yr && r[W.iso_week] === 1) || rows.find(r => r[W.iso_year] === yr); const xx = x(t(f)); s += `<line class="gridline" x1="${xx}" x2="${xx}" y1="${m.t}" y2="${h - m.b}"/>`; if (i % step === 0) s += `<text x="${xx + 4}" y="${h - 6}" style="${yr === y ? "fill:var(--ink);font-weight:500" : ""}">${yr}</text>`; });
+  s += `<path d="${linePath(rows.map(r => [x(t(r)), yS(r[W.hist_median_pct])]))}" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="1.5 3"/>`;
+  s += `<path d="${linePath(rows.map(r => [x(t(r)), yS(r[W.fill_pct])]))}" fill="none" stroke="${water}" stroke-width="2" stroke-linejoin="round"/>`;
+  const L = rows.at(-1); s += `<circle cx="${x(t(L))}" cy="${yS(L[W.fill_pct])}" r="4.5" fill="${water}" stroke="var(--surface)" stroke-width="2"/>`;
+  s += `<g id="longHair"></g><rect class="hit" x="${m.l}" y="${m.t}" width="${w - m.l - m.r}" height="${h - m.t - m.b}"/></svg>`;
+  el.innerHTML = s;
+  const svgEl = el.querySelector("svg"), hit = svgEl.querySelector(".hit");
+  hit.addEventListener("pointermove", ev => {
+    const b = svgEl.getBoundingClientRect(), px = (ev.clientX - b.left) * (w / b.width);
+    const tt = t0 + (px - m.l) / (w - m.l - m.r) * (t1 - t0);
+    let lo = 0, hi = rows.length - 1; while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (t(rows[mid]) < tt) lo = mid; else hi = mid; }
+    const r = Math.abs(t(rows[lo]) - tt) < Math.abs(t(rows[hi]) - tt) ? rows[lo] : rows[hi];
+    $("longHair").innerHTML = `<line class="xhair" x1="${x(t(r))}" x2="${x(t(r))}" y1="${m.t}" y2="${h - m.b}"/><circle cx="${x(t(r))}" cy="${yS(r[W.fill_pct])}" r="4.5" fill="${water}" stroke="var(--surface)" stroke-width="2"/>`;
+    showTip(`<b>Uke ${r[W.iso_week]} ${r[W.iso_year]}</b>` + trow("Fyllingsgrad", nf(r[W.fill_pct]) + " %", water) + trow("Median", nf(r[W.hist_median_pct]) + " %") + trow("Avvik", sgn(r[W.fill_pct] - r[W.hist_median_pct]) + " pp") + trow("Nedbør uke", r[W.precip_week_mm] == null ? "–" : nf(r[W.precip_week_mm]) + " mm"), ev);
+  });
+  hit.addEventListener("pointerleave", () => { hideTip(); $("longHair").innerHTML = ""; });
+  hit.addEventListener("click", ev => { /* click a year to select it */
+    const b = svgEl.getBoundingClientRect(), px = (ev.clientX - b.left) * (w / b.width);
+    const tt = t0 + (px - m.l) / (w - m.l - m.r) * (t1 - t0); const yr = new Date(tt).getUTCFullYear();
+    if (years.includes(yr)) { $("year").value = yr; setState({ year: yr }); }
+  });
+}
+
+/* ---------- yearly table ---------- */
+function renderYears() {
+  const rows = (DATA.yearly[state.area] || []).slice().reverse();
+  const cls = v => v == null ? "muted" : v > 0 ? "pos" : v < 0 ? "neg" : "";
+  $("yearTable").innerHTML = `<thead><tr><th>År</th><th>Snitt %</th><th>Δ fjor pp</th><th>Maks % (uke)</th><th>Min % (uke)</th><th>Nedbør mm</th><th>Hittil i år Δ</th><th>Våteste døgn</th></tr></thead><tbody>` +
+    rows.map(r => `<tr class="${r[Y.year] === state.year ? "sel" : ""}" data-y="${r[Y.year]}" style="cursor:pointer">
+      <td>${r[Y.year]}${r[Y.year] === LATEST_YEAR ? ' <span class="muted">(t.o.m. uke ' + LATEST_WEEK + ")</span>" : ""}</td>
+      <td class="num">${nf(r[Y.avg_fill_pct])}</td>
+      <td class="num ${cls(r[Y.avg_fill_yoy_pp])}">${sgn(r[Y.avg_fill_yoy_pp])}</td>
+      <td class="num">${nf(r[Y.max_fill_pct])} <span class="muted">(${r[Y.max_fill_week]})</span></td>
+      <td class="num">${nf(r[Y.min_fill_pct])} <span class="muted">(${r[Y.min_fill_week]})</span></td>
+      <td class="num">${nf(r[Y.total_precip_mm], 0)}</td>
+      <td class="num ${cls(r[Y.precip_ytd_yoy_pct])}">${r[Y.precip_ytd_yoy_pct] == null ? "–" : sgn(r[Y.precip_ytd_yoy_pct], 0) + " %"}</td>
+      <td class="num">${nf(r[Y.max_day_precip_mm])} <span class="muted">${fdate(r[Y.max_day_precip_date]).replace(/ \d{4}$/, "")}</span></td></tr>`).join("") + `</tbody>`;
+  $("yearTable").querySelectorAll("tr[data-y]").forEach(tr => tr.addEventListener("click", () => { $("year").value = tr.dataset.y; setState({ year: +tr.dataset.y }); }));
+}
+
+/* ---------- largest changes ---------- */
+const METRICS = { fill_1w: ["Fylling 1 uke", "pp"], fill_4w: ["Fylling 4 uker", "pp"], precip_1w: ["Nedbør 1 uke", "mm"], precip_4w: ["Nedbør 4 uker", "mm"] };
+function renderChanges() {
+  $("scopeTabs").innerHTML = [["year", `${state.year}`], ["all", "Alle år"]].map(([k, l]) => `<button type="button" data-s="${k}" aria-pressed="${state.scope === k}">${l}</button>`).join("");
+  $("metricTabs").innerHTML = Object.entries(METRICS).map(([k, [l]]) => `<button type="button" data-m="${k}" aria-pressed="${state.metric === k}">${l}</button>`).join("");
+  $("scopeTabs").onclick = e => { const b = e.target.closest("button"); if (b) setState({ scope: b.dataset.s }); };
+  $("metricTabs").onclick = e => { const b = e.target.closest("button"); if (b) setState({ metric: b.dataset.m }); };
+  let rows = (DATA.changes[state.area] || []).filter(r => r[C.metric] === state.metric);
+  rows = state.scope === "year" ? rows.filter(r => r[C.iso_year] === state.year && r[C.rank_in_year] <= 5).sort((a, b) => a[C.rank_in_year] - b[C.rank_in_year])
+                                : rows.filter(r => r[C.rank_all_time] <= 5).sort((a, b) => a[C.rank_all_time] - b[C.rank_all_time]);
+  rows = rows.slice(0, 5);
+  const unit = METRICS[state.metric][1], isFill = state.metric.startsWith("fill"), max = Math.max(...rows.map(r => Math.abs(r[C.value])), 1);
+  $("rankList").innerHTML = rows.length ? rows.map((r, i) => {
+    const v = r[C.value], col = isFill ? (v < 0 ? "var(--low)" : "var(--high)") : "var(--rain)";
+    const label = isFill ? (v >= 0 ? "Økning" : "Nedgang") : "Nedbør";
+    return `<div class="row"><span class="n">${i + 1}</span><div class="what"><b>${label} · uke ${state.metric.endsWith("4w") ? `${r[C.iso_week] - 3 > 0 ? r[C.iso_week] - 3 + "–" : ""}${r[C.iso_week]}` : r[C.iso_week]} ${r[C.iso_year]}</b>
+      <span>${fdate(r[C.window_start])} – ${fdate(r[C.week_end_date])}</span><div class="bar" style="width:${(Math.abs(v) / max * 100).toFixed(1)}%;background:${col}"></div></div>
+      <span class="v">${isFill ? sgn(v) : nf(v)} ${unit}</span></div>`;
+  }).join("") : `<p class="note">Ingen data for dette utvalget.</p>`;
+}
+
+/* ---------- render all ---------- */
+function render() {
+  document.querySelectorAll("#areas button").forEach(b => b.setAttribute("aria-pressed", b.dataset.a === state.area));
+  $("year").value = state.year;
+  renderKPIs(); renderSeason(); renderMonthly(); renderAreas(); renderLong(); renderYears(); renderChanges();
+}
+renderHeader(); render();
+let rz, lastW = 0; new ResizeObserver(es => { const w = Math.round(es[0].contentRect.width); if (w === lastW) return; lastW = w; clearTimeout(rz); rz = setTimeout(render, 120); }).observe(document.querySelector(".wrap"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>

@@ -1,0 +1,6 @@
+point_id,area_code,name,latitude,longitude,utm33_x,utm33_y,comment
+GTS_NO1,NO1,Valdres - Aurdal,60.93,9.40,196709,6767960,Valdres/Begna. Regulated watercourse in Østlandet
+GTS_NO2,NO2,Blåsjø (Ulla-Førre),59.32,6.87,38002,6603947,Norway's largest reservoir by energy content
+GTS_NO3,NO3,Aursjøen (Aura),62.37,8.65,171829,6931535,Aura watercourse. Møre og Romsdal
+GTS_NO4,NO4,Storglomvatnet (Svartisen),66.83,13.98,455217,7412796,Svartisen power plant reservoir. Nordland
+GTS_NO5,NO5,Sysenvatnet (Sima),60.44,7.42,83459,6724434,Sima power plant reservoir. Hardangervidda west

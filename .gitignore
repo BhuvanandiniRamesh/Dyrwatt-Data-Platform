@@ -1,0 +1,7 @@
+# Generated database (rebuild with: python build.py)
+data/*.duckdb
+data/*.duckdb.wal
+__pycache__/
+*.pyc
+.env
+.venv/
